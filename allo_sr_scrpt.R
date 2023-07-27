@@ -10,19 +10,24 @@ library(tidyverse)
 
 # import from multiple files 
 import <-import_results(
-    "C:/Users/au710823/OneDrive - Aarhus universitet/sist_meta/on_allo_sr/SysRev_lirsearchr_allo/bib_data/")
+    "C:/Users/au710823/OneDrive - Aarhus universitet/sist_meta/on_allo_sr/SysRev_lirsearchr_allo/bib_data/cinp/read/")
 
 # Remove duplicates by title
 naiveresults <-
   litsearchr::remove_duplicates(
     import, field = "title", method = "string_osa")
 
-remove(import)
+#remove(import)
 
 dim(naiveresults)
 
 stopwrd <- c(get_stopwords("English"),
-             c("rights reserved","rice","maize","face", "isotope",
+             c("rights reserved",
+               "positively correlated", "negatively correlated",
+               "article", 
+               "poorly understood",
+               "rights reserved",
+               #"rice","maize","face", "isotope",
                "significantly", "significant","advances","analyse","analysed","analyses",       
                 "analysing","analysis","analyze","analyzes",       
                  "analyzed","analyzing","assess","assessed",       
@@ -54,7 +59,9 @@ stopwrd <- c(get_stopwords("English"),
                  "review","studied","studies","study",          
                  "studying","systematic","treat","treated",        
                  "treating","treatment","treatments","treats",         
-                 "trial","trials","versus"))
+                 "trial","trials","versus"#,
+               #"united kingdom", "united states", "canada"
+               ))
 
 # Identify potential keywords
 
@@ -62,7 +69,7 @@ rakedkeywords <-
   litsearchr::extract_terms(
     text = paste(naiveresults$title, naiveresults$abstract),
     method = "fakerake",
-    min_freq = 3,
+    min_freq = 10,
     ngrams = TRUE,
     min_n = 2,
     max_n = 3,
@@ -75,11 +82,12 @@ taggedkeywords <-
   litsearchr::extract_terms(
     keywords = naiveresults$keywords,
     method = "tagged",
-    min_freq = 3,
+    min_freq = 10,
     ngrams = TRUE,
     min_n = 1,
     max_n = 3,
-    language = "English"
+    language = "English",
+    stopwords=stopwrd
   )
 
 # Build the keyword co-occurrence network
@@ -89,9 +97,16 @@ special_char <- "a1~!@#$%^&*(){}_+:\"<>?,./;'[]-="
 all_keywords <-
   gsub("[[:punct:]]", "", unique(append(taggedkeywords, rakedkeywords)))
 
-remove(taggedkeywords, rakedkeywords)
+#remove(taggedkeywords, rakedkeywords)
 
 length(all_keywords)
+
+all_keywords <- all_keywords[
+  !all_keywords %in% c("article", 
+                      "poorly understood",
+                      "rights reserved",
+                      "positively correlated", "negatively correlated"
+                      )]
 
 elements <- paste(as.character(naiveresults[, "title"]), 
                   as.character(naiveresults[, "abstract"]))
@@ -102,15 +117,19 @@ naivedfm <- create_dfm(
 
 remove(elements)
 
-g <- create_network(naivedfm, min_studies = 3, min_occ = 1)
+g <- create_network(naivedfm, min_studies = 3, min_occ = 3)
 
-# ggraph(g, layout="stress") +
-#   coord_fixed() +
-#   expand_limits(x=c(-3, 3)) +
-#   geom_edge_link(aes(alpha=weight)) +
-#   geom_node_point(shape="circle filled", fill="white") +
-#   geom_node_text(aes(label=name), hjust="outward", check_overlap=TRUE) +
-#   guides(edge_alpha=FALSE)
+ggraph(g, layout = "stress") +
+  coord_fixed() +
+  expand_limits(x = c(-3, 3)) +
+  geom_edge_link(aes(alpha = weight)) +
+  geom_node_point(shape = "circle filled", fill = "white") +
+  geom_node_text(
+    aes(label = name, col="keywords"),
+    hjust = "outward",
+    check_overlap = TRUE
+  ) +
+  guides(edge_alpha = FALSE)
 
 # Pruning
 
@@ -140,16 +159,15 @@ cutoff_fig +
   geom_hline(yintercept=cutoff_change, 
              linetype="dashed")
 
-g_redux <- reduce_graph(g, cutoff_change[1])
+g_redux <- reduce_graph(g, cutoff_change[2])
+
 selected_terms <- get_keywords(g_redux)
 
 selected_terms
 
-selected_terms_tunned <- c("biomass","carbon",
-                           "winter wheat",
-                           "barley", 
-                           "harvest index",
-                           "shoot biomass"
+selected_terms_tunned <- c("belowground biomass", "root",
+                           "roots",
+                           "root biomass"
                            )
 
 match2 <- check_recall(naiveresults[, "abstract"],paste(selected_terms_tunned) )
@@ -160,13 +178,33 @@ sys_results <- bind_cols(naiveresults,match2[,2:3])
 
 library(openxlsx)
 write.xlsx(sys_results, 
-                "C:/Users/au710823/OneDrive - Aarhus universitet/sist_meta/sys_resultsII.xls")
+                "C:/Users/au710823/OneDrive - Aarhus universitet/sist_meta/sys_results_cinp2707.xlsx")
 
-sys_results |> select(title,Best_Match,Similarity,author,abstract) |> 
+sys_results |> select(author,title,doi,journal,year,Best_Match,Similarity,abstract,times_cited) |> 
   mutate(Similarity=as.numeric(Similarity)) |> 
   arrange(Similarity) |> 
-write.xlsx("C:/Users/au710823/OneDrive - Aarhus universitet/sist_meta/sys_results_first.xls")
+write.xlsx("C:/Users/au710823/OneDrive - Aarhus universitet/sist_meta/sys_results_cinp2707_short.xlsx")
 
 
+#### Write a search----
+
+
+# grouped_terms <-list(
+#   medication=selected_terms[c(14, 28)],
+#   cbt=selected_terms[c(4, 6, 7, 17, 24, 25, 26, 29, 30)],
+#   phobia=selected_terms[c(2, 3, 9, 12, 15, 19, 20, 21, 23, 27)]
+# )
+# 
+# grouped_terms
+# 
+# 
+# write_search(
+#   grouped_terms,
+#   languages="English",
+#   exactphrase=TRUE,
+#   stemming=FALSE,
+#   closure="left",
+#   writesearch=TRUE
+# )
 
 
